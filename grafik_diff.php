@@ -355,37 +355,37 @@ function h(string $s): string
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
 
       <div class="flex flex-col gap-1.5">
-        <label class="text-sm font-semibold text-gray-700">Stary grafik
+        <p class="text-sm font-semibold text-gray-700">Stary grafik
           <span class="font-normal text-gray-400 ml-1">(przed zmianami)</span>
-        </label>
-        <label class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300
-                      hover:border-blue-400 rounded-xl p-5 cursor-pointer transition-colors group bg-gray-50">
-          <svg class="w-8 h-8 text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        </p>
+        <div id="zone-old"
+             class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300
+                    rounded-xl p-5 cursor-pointer transition-colors bg-gray-50 select-none">
+          <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                   d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
           </svg>
-          <span class="text-sm text-gray-500 group-hover:text-blue-600 transition-colors" id="old-label">Kliknij lub przeciągnij plik</span>
+          <span class="text-sm text-gray-500" id="old-label">Kliknij lub przeciągnij plik</span>
           <span class="text-xs text-gray-400">.ods / .xls / .html</span>
-          <input type="file" name="old_file" accept=".ods,.xls,.html,.htm" class="hidden"
-                 onchange="document.getElementById('old-label').textContent = this.files[0]?.name ?? 'Kliknij lub przeciągnij plik'">
-        </label>
+          <input type="file" name="old_file" id="old_file" accept=".ods,.xls,.html,.htm" class="hidden">
+        </div>
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <label class="text-sm font-semibold text-gray-700">Nowy grafik
+        <p class="text-sm font-semibold text-gray-700">Nowy grafik
           <span class="font-normal text-gray-400 ml-1">(po zmianach)</span>
-        </label>
-        <label class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300
-                      hover:border-blue-400 rounded-xl p-5 cursor-pointer transition-colors group bg-gray-50">
-          <svg class="w-8 h-8 text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        </p>
+        <div id="zone-new"
+             class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300
+                    rounded-xl p-5 cursor-pointer transition-colors bg-gray-50 select-none">
+          <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                   d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
           </svg>
-          <span class="text-sm text-gray-500 group-hover:text-blue-600 transition-colors" id="new-label">Kliknij lub przeciągnij plik</span>
+          <span class="text-sm text-gray-500" id="new-label">Kliknij lub przeciągnij plik</span>
           <span class="text-xs text-gray-400">.ods / .xls / .html</span>
-          <input type="file" name="new_file" accept=".ods,.xls,.html,.htm" class="hidden"
-                 onchange="document.getElementById('new-label').textContent = this.files[0]?.name ?? 'Kliknij lub przeciągnij plik'">
-        </label>
+          <input type="file" name="new_file" id="new_file" accept=".ods,.xls,.html,.htm" class="hidden">
+        </div>
       </div>
 
     </div>
@@ -549,16 +549,70 @@ function h(string $s): string
 
 <script>
 (function () {
+
+  // ── Dropzone ────────────────────────────────────────────────────────────────
+  function initDropzone(zoneId, inputId, labelId) {
+    const zone  = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    const label = document.getElementById(labelId);
+    if (!zone || !input || !label) return;
+
+    function setFile(file) {
+      if (!file) return;
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      label.textContent = file.name;
+      zone.classList.add('border-blue-500', 'bg-blue-50');
+      zone.classList.remove('border-gray-300', 'bg-gray-50');
+    }
+
+    // Click → open file dialog
+    zone.addEventListener('click', () => input.click());
+
+    // Keyboard a11y
+    zone.setAttribute('tabindex', '0');
+    zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') input.click(); });
+
+    // Input change (click-to-browse)
+    input.addEventListener('change', () => {
+      if (input.files.length) setFile(input.files[0]);
+    });
+
+    // Drag events
+    zone.addEventListener('dragover', e => {
+      e.preventDefault();
+      zone.classList.add('border-blue-400', 'bg-blue-50');
+      zone.classList.remove('border-gray-300', 'bg-gray-50');
+    });
+    zone.addEventListener('dragleave', e => {
+      if (!zone.contains(e.relatedTarget)) {
+        zone.classList.remove('border-blue-400', 'bg-blue-50');
+        zone.classList.add('border-gray-300', 'bg-gray-50');
+      }
+    });
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('border-blue-400');
+      const file = e.dataTransfer.files[0];
+      if (file) setFile(file);
+    });
+  }
+
+  initDropzone('zone-old', 'old_file', 'old-label');
+  initDropzone('zone-new', 'new_file', 'new-label');
+
+  // ── Checklist ───────────────────────────────────────────────────────────────
   let hideDone = false;
 
   function updateItem(cb) {
-    const item = cb.closest('.change-item');
-    const label = item.querySelector('label');
+    const item  = cb.closest('.change-item');
+    const lbl   = item.querySelector('label');
     if (cb.checked) {
-      label.classList.add('line-through', 'opacity-40');
+      lbl.classList.add('line-through', 'opacity-40');
       if (hideDone) item.classList.add('hidden');
     } else {
-      label.classList.remove('line-through', 'opacity-40');
+      lbl.classList.remove('line-through', 'opacity-40');
       item.classList.remove('hidden');
     }
     updateCardCounter(cb.closest('.employee-card'));
@@ -566,35 +620,31 @@ function h(string $s): string
 
   function updateCardCounter(card) {
     if (!card) return;
-    const cbs    = card.querySelectorAll('.change-cb');
-    const done   = [...cbs].filter(c => c.checked).length;
-    const total  = cbs.length;
+    const cbs   = card.querySelectorAll('.change-cb');
+    const done  = [...cbs].filter(c => c.checked).length;
     const counter = card.querySelector('.done-count');
-    if (counter) counter.textContent = done + '/' + total;
-
-    const allDone = done === total;
-    card.classList.toggle('opacity-50', allDone);
+    if (counter) counter.textContent = done + '/' + cbs.length;
+    card.classList.toggle('opacity-50', done === cbs.length);
   }
 
-  window.onCheck = function (cb) { updateItem(cb); };
+  window.onCheck = cb => updateItem(cb);
 
-  window.checkAll = function (state) {
+  window.checkAll = state => {
     document.querySelectorAll('.change-cb').forEach(cb => {
       cb.checked = state;
       updateItem(cb);
     });
   };
 
-  window.toggleHideDone = function () {
+  window.toggleHideDone = () => {
     hideDone = !hideDone;
-    const btn = document.getElementById('hideBtn');
-    btn.textContent = hideDone ? 'Pokaż zaznaczone' : 'Ukryj zaznaczone';
+    document.getElementById('hideBtn').textContent = hideDone ? 'Pokaż zaznaczone' : 'Ukryj zaznaczone';
     document.querySelectorAll('.change-item').forEach(item => {
       const cb = item.querySelector('.change-cb');
-      if (hideDone && cb.checked) item.classList.add('hidden');
-      else item.classList.remove('hidden');
+      item.classList.toggle('hidden', hideDone && cb.checked);
     });
   };
+
 })();
 </script>
 
