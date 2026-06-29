@@ -214,15 +214,54 @@ function extractSchedule(array $grid): array
 
 // ─── Diff computation ─────────────────────────────────────────────────────────
 
+function normName(string $name): string
+{
+    return mb_strtolower(preg_replace('/\s+/', ' ', trim($name)));
+}
+
 function computeDiff(array $oldSched, array $newSched): array
 {
-    $allSaps = array_unique(array_merge(array_keys($oldSched), array_keys($newSched)));
-    $diffs   = [];
+    // Build name→SAP index for the new schedule (for fallback matching)
+    $newByName = [];
+    foreach ($newSched as $sap => $entry) {
+        $newByName[normName($entry['name'])] = $sap;
+    }
 
-    foreach ($allSaps as $sap) {
-        $oldEntry = $oldSched[$sap] ?? null;
-        $newEntry = $newSched[$sap] ?? null;
-        $name     = $newEntry['name'] ?? $oldEntry['name'] ?? $sap;
+    // Build pairs: [oldSap|null, newSap|null]
+    $pairs   = [];
+    $usedNew = [];
+
+    foreach ($oldSched as $oldSap => $oldEntry) {
+        if (isset($newSched[$oldSap])) {
+            // Exact SAP match
+            $pairs[] = [$oldSap, $oldSap];
+            $usedNew[$oldSap] = true;
+        } else {
+            // Fallback: match by normalized name
+            $norm = normName($oldEntry['name']);
+            $newSap = $newByName[$norm] ?? null;
+            if ($newSap !== null && !isset($usedNew[$newSap])) {
+                $pairs[] = [$oldSap, $newSap];
+                $usedNew[$newSap] = true;
+            } else {
+                $pairs[] = [$oldSap, null];
+            }
+        }
+    }
+
+    // Employees only in new schedule (not matched above)
+    foreach ($newSched as $newSap => $newEntry) {
+        if (!isset($usedNew[$newSap])) {
+            $pairs[] = [null, $newSap];
+        }
+    }
+
+    $diffs = [];
+    foreach ($pairs as [$oldSap, $newSap]) {
+        $oldEntry = $oldSap !== null ? ($oldSched[$oldSap] ?? null) : null;
+        $newEntry = $newSap !== null ? ($newSched[$newSap] ?? null) : null;
+        $name     = $newEntry['name'] ?? $oldEntry['name'] ?? (string)($oldSap ?? $newSap);
+        $key      = $newSap ?? $oldSap;
         $oldDays  = $oldEntry['days'] ?? [];
         $newDays  = $newEntry['days'] ?? [];
 
@@ -238,7 +277,7 @@ function computeDiff(array $oldSched, array $newSched): array
         }
 
         if ($changes) {
-            $diffs[$sap] = ['name' => $name, 'sap' => $sap, 'changes' => $changes];
+            $diffs[$key] = ['name' => $name, 'sap' => $key, 'changes' => $changes];
         }
     }
 
