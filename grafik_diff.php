@@ -1,5 +1,6 @@
 <?php
-declare(strict_types=1);
+// strict_types intentionally omitted — numeric SAP keys become int in PHP arrays,
+// which would cause TypeError when passed to h(string) under strict mode.
 ob_start();
 error_reporting(E_ERROR | E_PARSE); // suppress notices/warnings from corrupting HTML output
 
@@ -279,7 +280,7 @@ function computeDiff(array $oldSched, array $newSched): array
         }
 
         if ($changes) {
-            $diffs[$key] = ['name' => $name, 'sap' => $key, 'changes' => $changes];
+            $diffs[$key] = ['name' => $name, 'sap' => (string)$key, 'changes' => $changes];
         }
     }
 
