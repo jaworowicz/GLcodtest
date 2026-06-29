@@ -35,7 +35,6 @@ function parseODS(string $path): array
 
         $ra = $rowEl->attributes($NS_TABLE);
         $rowRepeat = (int)($ra['number-rows-repeated'] ?? 1);
-        // Cap: large repeat = trailing empty rows, keep max 2 copies
         $rowRepeat = ($rowRepeat > 3) ? 1 : $rowRepeat;
 
         $cells = [];
@@ -45,10 +44,8 @@ function parseODS(string $path): array
 
             $ca = $cellEl->attributes($NS_TABLE);
             $colRepeat = (int)($ca['number-columns-repeated'] ?? 1);
-            // Cap: large repeat = trailing empty cells
             if ($colRepeat > 40) $colRepeat = 1;
 
-            // Extract text value (handles direct text:p and nested text:span)
             $val = '';
             foreach ($cellEl->children($NS_TEXT) as $pEl) {
                 if ($pEl->getName() !== 'p') continue;
@@ -83,7 +80,6 @@ function parseHTML(string $path): array
     $doc = new DOMDocument('1.0', 'UTF-8');
     @$doc->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_NOERROR);
 
-    // Find first table with border="1" or first table with <th>
     $target = null;
     foreach ($doc->getElementsByTagName('table') as $t) {
         if ($t->getAttribute('border') === '1') { $target = $t; break; }
@@ -116,7 +112,6 @@ function detectFormat(string $tmpPath, string $origName): string
     $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
     if ($ext === 'ods') return 'ods';
     if (in_array($ext, ['xls', 'xlsx', 'html', 'htm'], true)) return 'html';
-    // Fallback: check ZIP magic bytes (ODS is a ZIP archive)
     $f = fopen($tmpPath, 'rb');
     $magic = fread($f, 4);
     fclose($f);
@@ -127,13 +122,11 @@ function detectFormat(string $tmpPath, string $origName): string
 
 function normalizeDate(string $d): string
 {
-    // Unify separators: "01-07" → "01.07"
     return str_replace('-', '.', $d);
 }
 
 function extractSchedule(array $grid): array
 {
-    // ── Find header row ──────────────────────────────────────────────────────
     $headerIdx = -1;
     foreach ($grid as $rIdx => $row) {
         foreach ($row as $cell) {
@@ -146,11 +139,10 @@ function extractSchedule(array $grid): array
     }
     if ($headerIdx === -1) throw new RuntimeException('Nie znaleziono nagłówka tabeli (brak kolumny "Nazwisko" lub "NR SAP")');
 
-    // ── Determine column indices from header row ──────────────────────────────
     $header     = $grid[$headerIdx];
     $idxSap     = -1;
     $idxName    = -1;
-    $dayColumns = []; // colIndex → 'DD.MM'
+    $dayColumns = [];
 
     foreach ($header as $cIdx => $cell) {
         $cell = trim((string)$cell);
@@ -163,7 +155,6 @@ function extractSchedule(array $grid): array
         }
     }
 
-    // ODS2-style: dates are in the row above the header (e.g. row 0 has "01-07", row 1 has "L.P.")
     if (empty($dayColumns) && $headerIdx > 0) {
         $prevRow = $grid[$headerIdx - 1];
         foreach ($prevRow as $cIdx => $cell) {
@@ -176,23 +167,19 @@ function extractSchedule(array $grid): array
 
     if (empty($dayColumns)) throw new RuntimeException('Nie znaleziono kolumn z datami (format DD.MM lub DD-MM)');
 
-    // Defaults if columns not explicitly found
     if ($idxSap  === -1) $idxSap  = 1;
     if ($idxName === -1) $idxName = ($idxSap !== -1) ? $idxSap + 1 : 2;
 
-    // ── Build schedule ────────────────────────────────────────────────────────
     $schedule = [];
     for ($rIdx = $headerIdx + 1; $rIdx < count($grid); $rIdx++) {
         $row   = $grid[$rIdx];
         $cell0 = trim((string)($row[0] ?? ''));
 
-        // Employee row: first cell is a positive integer
         if (!ctype_digit($cell0) || $cell0 === '0') continue;
 
         $cellSap  = trim((string)($row[$idxSap]  ?? ''));
         $cellName = trim((string)($row[$idxName] ?? ''));
 
-        // Name must contain at least one letter; skip placeholder rows (SAP = "!")
         if (!preg_match('/\p{L}/u', $cellName)) continue;
         if ($cellSap === '!' || $cellSap === '') continue;
 
@@ -221,23 +208,19 @@ function normName(string $name): string
 
 function computeDiff(array $oldSched, array $newSched): array
 {
-    // Build name→SAP index for the new schedule (for fallback matching)
     $newByName = [];
     foreach ($newSched as $sap => $entry) {
         $newByName[normName($entry['name'])] = $sap;
     }
 
-    // Build pairs: [oldSap|null, newSap|null]
     $pairs   = [];
     $usedNew = [];
 
     foreach ($oldSched as $oldSap => $oldEntry) {
         if (isset($newSched[$oldSap])) {
-            // Exact SAP match
             $pairs[] = [$oldSap, $oldSap];
             $usedNew[$oldSap] = true;
         } else {
-            // Fallback: match by normalized name
             $norm = normName($oldEntry['name']);
             $newSap = $newByName[$norm] ?? null;
             if ($newSap !== null && !isset($usedNew[$newSap])) {
@@ -249,7 +232,6 @@ function computeDiff(array $oldSched, array $newSched): array
         }
     }
 
-    // Employees only in new schedule (not matched above)
     foreach ($newSched as $newSap => $newEntry) {
         if (!isset($usedNew[$newSap])) {
             $pairs[] = [null, $newSap];
@@ -335,21 +317,16 @@ function h(string $s): string
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Porównywarka Grafików</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    [x-cloak] { display: none !important; }
-  </style>
 </head>
 <body class="min-h-screen bg-gray-100 font-sans">
 
 <div class="max-w-3xl mx-auto px-4 py-10">
 
-  <!-- Header -->
   <div class="mb-8">
     <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Porównywarka Grafików</h1>
     <p class="text-gray-500 mt-1 text-sm">Wgraj stary i nowy grafik (ODS lub HTML/XLS) aby zobaczyć różnice.</p>
   </div>
 
-  <!-- Upload form -->
   <form method="POST" enctype="multipart/form-data"
         class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-8">
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -404,7 +381,6 @@ function h(string $s): string
     </div>
   </form>
 
-  <!-- Error -->
   <?php if ($error): ?>
   <div class="bg-red-50 border border-red-200 text-red-800 px-5 py-4 rounded-xl mb-6 flex gap-3 items-start">
     <svg class="w-5 h-5 mt-0.5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -418,7 +394,6 @@ function h(string $s): string
   </div>
   <?php endif; ?>
 
-  <!-- Results -->
   <?php if ($success): ?>
 
     <?php if (empty($diffs)): ?>
@@ -431,12 +406,11 @@ function h(string $s): string
 
     <?php else: ?>
 
-    <!-- Controls bar -->
     <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
       <p class="text-sm text-gray-600">
         Zmiany u <span class="font-bold text-gray-900"><?= count($diffs) ?></span>
         <?= count($diffs) === 1 ? 'pracownika' : 'pracowników' ?>,
-        łącznie <span class="font-bold text-gray-900" id="totalChanges">
+        łącznie <span class="font-bold text-gray-900">
           <?= array_sum(array_map(fn($d) => count($d['changes']), $diffs)) ?>
         </span> wpisów.
       </p>
@@ -459,13 +433,11 @@ function h(string $s): string
       </div>
     </div>
 
-    <!-- Employee diff cards -->
     <?php foreach ($diffs as $sap => $diff): ?>
     <?php $totalChanges = count($diff['changes']); ?>
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 mb-4 overflow-hidden employee-card"
          data-sap="<?= h((string)$sap) ?>">
 
-      <!-- Card header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div>
           <h2 class="font-semibold text-gray-900 text-base"><?= h($diff['name']) ?></h2>
@@ -479,7 +451,6 @@ function h(string $s): string
         </div>
       </div>
 
-      <!-- Changes list -->
       <ul class="divide-y divide-gray-50 px-2 py-2">
         <?php foreach ($diff['changes'] as $idx => $change): ?>
         <?php
@@ -495,7 +466,6 @@ function h(string $s): string
             <span class="font-semibold text-gray-700 w-12 tabular-nums"><?= h($day) ?></span>
 
             <?php if ($from !== '' && $to !== ''): ?>
-              <!-- Changed shift -->
               <span class="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200
                            px-2 py-0.5 rounded-full text-xs font-medium">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -515,7 +485,6 @@ function h(string $s): string
               </span>
 
             <?php elseif ($from !== ''): ?>
-              <!-- Removed shift -->
               <span class="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200
                            px-2 py-0.5 rounded-full text-xs font-medium">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -525,7 +494,6 @@ function h(string $s): string
               </span>
 
             <?php else: ?>
-              <!-- Added shift -->
               <span class="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200
                            px-2 py-0.5 rounded-full text-xs font-medium">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -545,12 +513,12 @@ function h(string $s): string
     <?php endif; ?>
   <?php endif; ?>
 
-</div><!-- /container -->
+</div>
 
 <script>
 (function () {
 
-  // ── Dropzone ────────────────────────────────────────────────────────────────
+  // ── Dropzone ──────────────────────────────────────────────────────────────────────
   function initDropzone(zoneId, inputId, labelId) {
     const zone  = document.getElementById(zoneId);
     const input = document.getElementById(inputId);
@@ -559,27 +527,28 @@ function h(string $s): string
 
     function setFile(file) {
       if (!file) return;
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      input.files = dt.files;
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+      } catch (e) {}
       label.textContent = file.name;
+      label.classList.remove('text-gray-500');
+      label.classList.add('text-blue-700', 'font-medium');
       zone.classList.add('border-blue-500', 'bg-blue-50');
       zone.classList.remove('border-gray-300', 'bg-gray-50');
     }
 
-    // Click → open file dialog
     zone.addEventListener('click', () => input.click());
-
-    // Keyboard a11y
     zone.setAttribute('tabindex', '0');
-    zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') input.click(); });
+    zone.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+    });
 
-    // Input change (click-to-browse)
     input.addEventListener('change', () => {
       if (input.files.length) setFile(input.files[0]);
     });
 
-    // Drag events
     zone.addEventListener('dragover', e => {
       e.preventDefault();
       zone.classList.add('border-blue-400', 'bg-blue-50');
@@ -602,12 +571,12 @@ function h(string $s): string
   initDropzone('zone-old', 'old_file', 'old-label');
   initDropzone('zone-new', 'new_file', 'new-label');
 
-  // ── Checklist ───────────────────────────────────────────────────────────────
+  // ── Checklist ───────────────────────────────────────────────────────────────────
   let hideDone = false;
 
   function updateItem(cb) {
-    const item  = cb.closest('.change-item');
-    const lbl   = item.querySelector('label');
+    const item = cb.closest('.change-item');
+    const lbl  = item.querySelector('label');
     if (cb.checked) {
       lbl.classList.add('line-through', 'opacity-40');
       if (hideDone) item.classList.add('hidden');
@@ -620,8 +589,8 @@ function h(string $s): string
 
   function updateCardCounter(card) {
     if (!card) return;
-    const cbs   = card.querySelectorAll('.change-cb');
-    const done  = [...cbs].filter(c => c.checked).length;
+    const cbs     = card.querySelectorAll('.change-cb');
+    const done    = [...cbs].filter(c => c.checked).length;
     const counter = card.querySelector('.done-count');
     if (counter) counter.textContent = done + '/' + cbs.length;
     card.classList.toggle('opacity-50', done === cbs.length);
